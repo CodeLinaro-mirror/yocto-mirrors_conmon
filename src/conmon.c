@@ -423,6 +423,11 @@ int main(int argc, char *argv[])
 		g_timeout_add_seconds(opt_timeout, timeout_cb, NULL);
 	}
 
+	/* Set up periodic container liveness check (every 5 seconds)
+	 * This helps detect container exits when the container process is not
+	 * a direct child of conmon and we don't receive SIGCHLD signals. */
+	g_timeout_add_seconds(5, container_liveness_cb, NULL);
+
 	if (data.exit_status_cache) {
 		GHashTableIter iter;
 		gpointer key, value;

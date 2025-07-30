@@ -46,6 +46,25 @@ static void check_child_processes(GHashTable *pid_to_handler, GHashTable *cache)
 			continue;
 
 		if (pid < 0 && errno == ECHILD) {
+			/* Before quitting, check if container_pid is still alive.
+			 * In some systemd configurations, the container process may not be
+			 * a direct child, so we won't receive SIGCHLD when it exits.
+			 * Use kill(pid, 0) to check if the process still exists. */
+			if (container_pid > 0) {
+				if (kill(container_pid, 0) == 0) {
+					/* Container process is still alive but not our child.
+					 * Don't quit the main loop yet. */
+					ninfof("Container process %d is still alive but not a direct child", container_pid);
+					return;
+				} else if (errno == ESRCH) {
+					/* Container process has exited */
+					ninfof("Container process %d has exited (detected via kill probe)", container_pid);
+					/* Simulate container exit callback */
+					container_status = 0; /* We can't get the real exit status */
+					container_pid = -1;
+					/* Fall through to quit the main loop */
+				}
+			}
 			g_main_loop_quit(main_loop);
 			return;
 		}
@@ -95,6 +114,36 @@ gboolean timeout_cb(G_GNUC_UNUSED gpointer user_data)
 	ninfo("Timed out, killing main loop");
 	g_main_loop_quit(main_loop);
 	return G_SOURCE_REMOVE;
+}
+
+gboolean container_liveness_cb(G_GNUC_UNUSED gpointer user_data)
+{
+	/* Periodically check if the container process is still alive.
+	 * This is necessary for cases where the container process is not
+	 * a direct child of conmon and we don't receive SIGCHLD when it exits. */
+	if (container_pid > 0) {
+		if (kill(container_pid, 0) != 0 && errno == ESRCH) {
+			/* Container process has exited */
+			ninfof("Container process %d has exited (detected via periodic check)", container_pid);
+			/* Simulate container exit callback */
+			container_status = 0; /* We can't get the real exit status */
+			container_pid = -1;
+
+			/* In the case of a quickly exiting exec command, the container exit callback
+			   sometimes gets called earlier than the pid exit callback. If we quit the loop at that point
+			   we risk falsely telling the caller of conmon the runtime call failed (because runtime status
+			   wouldn't be set). Instead, don't quit the loop until runtime exit is also called, which should
+			   shortly after. */
+			if (opt_api_version >= 1 && create_pid > 0 && opt_exec && opt_terminal) {
+				ndebugf("container pid detected as exited via liveness check, but waiting for runtime pid return");
+				return G_SOURCE_CONTINUE; /* Keep checking but don't quit main loop yet */
+			}
+
+			g_main_loop_quit(main_loop);
+			return G_SOURCE_REMOVE;
+		}
+	}
+	return G_SOURCE_CONTINUE; /* Keep checking */
 }
 
 int get_exit_status(int status)

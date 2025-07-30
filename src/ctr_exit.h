@@ -18,6 +18,7 @@ void container_exit_cb(G_GNUC_UNUSED GPid pid, int status, G_GNUC_UNUSED gpointe
 gboolean check_child_processes_cb(gpointer user_data);
 gboolean on_signalfd_cb(gint fd, GIOCondition condition, gpointer user_data);
 gboolean timeout_cb(G_GNUC_UNUSED gpointer user_data);
+gboolean container_liveness_cb(G_GNUC_UNUSED gpointer user_data);
 int get_exit_status(int status);
 void runtime_exit_cb(G_GNUC_UNUSED GPid pid, int status, G_GNUC_UNUSED gpointer user_data);
 void container_exit_cb(G_GNUC_UNUSED GPid pid, int status, G_GNUC_UNUSED gpointer user_data);
